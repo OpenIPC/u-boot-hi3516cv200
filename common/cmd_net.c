@@ -54,6 +54,12 @@ U_BOOT_CMD(
 	"[loadAddress] [bootfilename] <upload_size>"
 );
 
+U_BOOT_CMD(
+	tftpboot,	4,	1,	do_tftp,
+	"tftpboot\t- download or upload image via network using TFTP protocol",
+	"[loadAddress] [bootfilename] <upload_size>"
+);
+
 int do_rarpb (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
 {
 	return netboot_common (RARP, cmdtp, argc, argv);
