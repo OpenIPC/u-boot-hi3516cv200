@@ -246,7 +246,7 @@
 
 /* accoding to CONFIG_CONS_INDEX */
 #define CONFIG_CUR_UART_BASE          CFG_SERIAL0
-#define CONFIG_PRODUCTNAME		"hi3518ev200"
+#define CONFIG_PRODUCTNAME		"hi3516cv200"
 
 /*-----------------------------------------------------------------------
  * bootrom Configuration
@@ -347,6 +347,8 @@
 	#define CONFIG_USE_ARCH_MEMSET
 	/* #define CONFIG_USE_IRQ */
 #endif
+
+#include <configs/hi-common.h>
 
 #endif	/* __CONFIG_H */
 

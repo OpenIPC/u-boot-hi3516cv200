@@ -348,5 +348,7 @@
 	/* #define CONFIG_USE_IRQ */
 #endif
 
+#include <configs/hi-common.h>
+
 #endif	/* __CONFIG_H */
 
