@@ -429,13 +429,13 @@ ifdef CONFIG_DDR_TRAINING_V2
 endif
 
 .PHONY: mini-boot.bin
-mini-boot.bin: $(TOPDIR)/full-boot.bin
+mini-boot.bin: $(TOPDIR)/u-boot.bin
 	make -C $(TOPDIR)/arch/$(ARCH)/cpu/$(CPU)/compressed \
 		CROSS_COMPILE=$(CROSS_COMPILE) \
-		BINIMAGE=$(TOPDIR)/full-boot.bin TOPDIR=$(TOPDIR)
+		BINIMAGE=$(TOPDIR)/u-boot.bin TOPDIR=$(TOPDIR)
 
 .PHONY: mini-boot.clean
-mini-boot.clean: $(TOPDIR)/full-boot.bin
+mini-boot.clean: $(TOPDIR)/u-boot.bin
 	make -C $(TOPDIR)/arch/$(ARCH)/cpu/$(CPU)/compressed \
 		CROSS_COMPILE=$(CROSS_COMPILE) clean
 
