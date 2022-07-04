@@ -97,7 +97,7 @@ static struct medium_interface s_intf[MAX_UPDATE_INTF] = {
 
 /* layout of the FLASH. ST = start address, ND = end address. */
 #define AU_FL_FIRMWARE_ST	0x00000000
-#define AU_FL_FIRMWARE_ND	0x0007FFFF
+#define AU_FL_FIRMWARE_ND	0x0004FFFF
 #define AU_FL_KERNEL_ST		0x00050000
 #define AU_FL_KERNEL_ND		0x0024FFFF
 #define AU_FL_ROOTFS_ST		0x00250000
