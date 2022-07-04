@@ -355,7 +355,7 @@ static int au_do_update(int idx, long sz)
 	}
 
 	/* strip the header - except for the kernel and ramdisk */
-	if (hdr->ih_type == IH_TYPE_KERNEL || hdr->ih_type == IH_TYPE_RAMDISK) {
+	if (hdr->ih_type == IH_TYPE_RAMDISK) {
 		pbuf = buf;
 		write_len = sizeof(*hdr) + ntohl(hdr->ih_size);
 	} else {
