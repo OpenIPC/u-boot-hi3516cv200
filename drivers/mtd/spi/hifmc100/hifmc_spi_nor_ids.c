@@ -227,6 +227,54 @@ static struct spi_drv spi_driver_micron = {
 /*****************************************************************************/
 static struct spi_nor_info hifmc_spi_nor_info_table[] = {
 	/* name		id	id_len	chipsize(Bytes)	erasesize */
+
+	/* Xinxin MXC */
+	{
+		"xm25qh64a", {0x20, 0x70, 0x17}, 3, _8M, _64K, 3,
+		{
+			&READ_STD(0, INFINITE, 66),
+#ifndef CONFIG_CLOSE_SPI_8PIN_4IO
+			&READ_QUAD(1, INFINITE, 80),
+#endif
+			0
+		},
+		{
+			&WRITE_STD(0, 256, 100),
+#ifndef CONFIG_CLOSE_SPI_8PIN_4IO
+			&WRITE_QUAD(0, 256, 80),
+#endif
+			0
+		},
+		{
+			&ERASE_SECTOR_64K(0, _64K, 100),
+			0
+		},
+			&spi_driver_general,
+	},
+
+	{
+		"xm25qh128a", {0x20, 0x70, 0x18}, 3, _16M, _64K, 3,
+		{
+			&READ_STD(0, INFINITE, 66),
+#ifndef CONFIG_CLOSE_SPI_8PIN_4IO
+			&READ_QUAD(1, INFINITE, 80),
+#endif
+			0
+		},
+		{
+			&WRITE_STD(0, 256, 100),
+#ifndef CONFIG_CLOSE_SPI_8PIN_4IO
+			&WRITE_QUAD(0, 256, 80),
+#endif
+			0
+		},
+		{
+			&ERASE_SECTOR_64K(0, _64K, 100),
+			0
+		},
+		&spi_driver_general,
+	},
+
 	{
 		"at25fs010", {0x1f, 0x66, 0x01}, 3, _128K, _32K, 3,
 		{
@@ -2280,6 +2328,55 @@ static struct spi_nor_info hifmc_spi_nor_info_table[] = {
 			0
 		},
 		&spi_driver_no_qe,
+	},
+
+/*need to add dual rw*/
+	{
+		"EN25QH64", {0x1c, 0x70, 0x17}, 3, (_64K * 128),  _64K, 3,
+		{
+			&READ_STD(0, INFINITE, 50),
+			&READ_FAST(1, INFINITE, 100),
+			&READ_DUAL(1, INFINITE, 80),
+			&READ_DUAL_ADDR(1, INFINITE, 80),
+#ifndef CONFIG_CLOSE_SPI_8PIN_4IO
+			&READ_QUAD_ADDR(3, INFINITE, 50),
+#endif
+			0
+		},
+		{
+			&WRITE_STD(0, 256, 80),
+			0
+		},
+		{
+			&ERASE_SECTOR_64K(0, _64K, 80/*104*/),
+			0
+		},
+		&spi_driver_general,
+	},
+
+	{
+		"EN25QH128", {0x1c, 0x70, 0x18}, 3, (_64K * 256),  _64K, 3,
+		{
+			&READ_STD(0, INFINITE, 50),
+			&READ_FAST(1, INFINITE, 104),
+			&READ_DUAL(1, INFINITE, 80),
+			&READ_DUAL_ADDR(1, INFINITE, 80),
+#ifndef CONFIG_CLOSE_SPI_8PIN_4IO
+			&READ_QUAD_ADDR(3, INFINITE, 50),
+#endif
+			0
+		},
+
+		{
+			&WRITE_STD(0, 256, 104),
+			0
+		},
+
+		{
+			&ERASE_SECTOR_64K(0, _64K, 80/*104*/),
+			0
+		},
+		&spi_driver_general,
 	},
 
 	/* ESMT */
