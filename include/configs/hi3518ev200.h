@@ -260,7 +260,7 @@
 /*-----------------------------------------------------------------------
  * sdcard or usb storage system update
  * ----------------------------------------------------------------------*/
-/* #define CONFIG_AUTO_UPDATE			1 */
+#define CONFIG_AUTO_UPDATE			1
 #ifdef CONFIG_AUTO_UPDATE
 	#define CONFIG_AUTO_SD_UPDATE		1
 	#define CONFIG_AUTO_USB_UPDATE		1
@@ -293,7 +293,7 @@
 #endif
 
 #ifdef CONFIG_HIMCI_V200
-	#define CONFIG_MMC_DEVID	            1 /* emmc = 1; SD = 0 */
+	#define CONFIG_MMC_DEVID	            0 /* emmc = 1; SD = 0 */
 	#define CONFIG_MMC_BOOT_ADDR                0
 	#define CONFIG_MMC_POWER_OFF_TIMEOUT        5
 	#define CONFIG_MMC_POWER_ON_TIMEROUT        40

@@ -5,8 +5,6 @@ set -e
 export ARCH=arm
 export CROSS_COMPILE=${CROSS_COMPILE:-arm-hisiv510-linux-}
 
-echo $CROSS_COMPILE
-exit 0
 OUTPUTDIR="${HOME}/src/hisi/uboot"
 SOCS="hi3518ev200 hi3516cv200"
 

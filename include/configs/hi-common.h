@@ -39,15 +39,6 @@
 #undef CONFIG_SYS_PROMPT
 #define CONFIG_SYS_PROMPT	"OpenIPC # "
 
-#if (CONFIG_AUTO_UPDATE == 1)
-#define CONFIG_AUTO_UPDATE_ADAPTATION   1
-#define CONFIG_AUTO_SD_UPDATE     1
-
-#ifndef CONFIG_MINI_BOOT
-#define CONFIG_CMD_FAT          1
-#endif
-#endif
-
 #define CONFIG_SYS_HUSH_PARSER
 #define CONFIG_SYS_PROMPT_HUSH_PS2 " > "
 
