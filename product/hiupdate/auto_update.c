@@ -291,6 +291,7 @@ static int spi_flash_erase_op(struct spi_flash *flash, unsigned long offset,
 		/* notify real time schedule */
 		schedule_notify(offset, erase_len, erase_start);
 	}
+	printf("\n");
 	return ret;
 }
 
@@ -320,7 +321,7 @@ static int spi_flash_write_op(struct spi_flash *flash, unsigned long offset,
 		/* notify real time schedule */
 		schedule_notify(offset, write_len, write_start);
 	}
-
+	printf("\n");
 	return ret;
 }
 
