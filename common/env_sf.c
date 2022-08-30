@@ -141,6 +141,7 @@ void sf_env_relocate_spec(void)
 	if (ret)
 		goto err_read;
 
+
 	if (crc32(0, env_ptr->data, ENV_SIZE) != env_ptr->crc)
 		goto err_crc;
 
@@ -155,11 +156,15 @@ err_probe:
 err_crc:
 	puts("*** Warning - bad CRC, using default environment\n\n");
 
-	set_default_env();
-
-	puts("*** Write default environment to flash\n");
-	env_crc_update();
-	saveenv();
+	if (env_ptr->crc == 0xffffffff) {
+		set_default_env();
+		puts("*** Write default environment to flash\n");
+		env_crc_update();
+		saveenv();
+	}
+	else {
+		set_default_env();
+	}
 
 }
 
