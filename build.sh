@@ -1,6 +1,4 @@
-#!/bin/sh
-
-set -e
+#!/bin/sh -e
 
 export ARCH=arm
 export CROSS_COMPILE=${CROSS_COMPILE:-arm-hisiv510-linux-}
