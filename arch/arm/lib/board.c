@@ -451,6 +451,27 @@ void start_armboot (void)
 	/* initialize environment */
 	env_relocate ();
 
+	if (getenv_yesno("restore")) {
+		puts("\nENV restore flag is set. ");
+		set_default_env();
+	}
+
+	switch (get_boot_media()) {
+	case BOOT_MEDIA_NAND:
+	s = getenv("setnand");
+	if (s)
+		run_command(s, 0);
+	break;
+	case BOOT_MEDIA_SPIFLASH:;
+	struct mtd_info_ex *spiflash_info = get_spiflash_info();
+	if (spiflash_info->chipsize > 8388608) {
+		s = getenv("setnor16m");
+		if (s)
+		run_command(s, 0);
+	}
+	break;
+	}
+
 #ifdef CONFIG_VFD
 	/* must do this after the framebuffer is allocated */
 	drv_vfd_init();
