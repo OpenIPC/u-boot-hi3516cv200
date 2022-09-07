@@ -452,24 +452,26 @@ void start_armboot (void)
 	env_relocate ();
 
 	if (getenv_yesno("restore")) {
-		puts("\nENV restore flag is set. ");
-		set_default_env();
-	}
+	puts("\nENV restore flag is set. ");
+	set_default_env();
 
+#if 0
 	switch (get_boot_media()) {
 	case BOOT_MEDIA_NAND:
-	s = getenv("setnand");
-	if (s)
-		run_command(s, 0);
-	break;
-	case BOOT_MEDIA_SPIFLASH:;
-	struct mtd_info_ex *spiflash_info = get_spiflash_info();
-	if (spiflash_info->chipsize > 8388608) {
-		s = getenv("setnor16m");
+		s = getenv("setnand");
 		if (s)
 		run_command(s, 0);
+		break;
+	case BOOT_MEDIA_SPIFLASH:;
+		struct mtd_info_ex *spiflash_info = get_spiflash_info();
+		if (spiflash_info->chipsize > 8388608) {
+		s = getenv("setnor16m");
+		if (s)
+			run_command(s, 0);
+		}
+		break;
 	}
-	break;
+#endif
 	}
 
 #ifdef CONFIG_VFD
