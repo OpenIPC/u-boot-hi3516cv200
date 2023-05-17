@@ -488,7 +488,7 @@ static struct spi_nor_info hifmc_spi_nor_info_table[] = {
 	{
 		"MX25L6406E",  {0xc2, 0x20, 0x17}, 3, _8M,    _64K, 3,
 		{
-			&READ_STD(0, INFINITE, 50),
+			&READ_STD(0, INFINITE, 33),
 			&READ_FAST(1, INFINITE, 86),
 			&READ_DUAL(1, INFINITE, 80),
 #ifndef CONFIG_CLOSE_SPI_8PIN_4IO
