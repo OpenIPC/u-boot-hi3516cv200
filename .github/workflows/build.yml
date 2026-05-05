@@ -1,0 +1,110 @@
+name: Build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [hi3518ev200, hi3516cv200]
+
+    steps:
+      - name: Install 32-bit libs
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zlib1g:i386 libc6:i386 libstdc++6:i386
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache toolchain
+        id: cache-tc
+        uses: actions/cache@v4
+        with:
+          path: toolchain
+          key: arm-hisiv510-linux-v1
+
+      - name: Download toolchain
+        if: steps.cache-tc.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v1 -R OpenIPC/toolchains \
+            -p 'arm-hisiv510-linux.tgz'
+          mkdir -p toolchain
+          tar xzf arm-hisiv510-linux.tgz -C toolchain
+          if [ -f toolchain/arm-hisiv510-linux/arm-hisiv510-linux.tar.bz2 ]; then
+            tar xjf toolchain/arm-hisiv510-linux/arm-hisiv510-linux.tar.bz2 -C toolchain
+          fi
+          rm arm-hisiv510-linux.tgz
+          # Create short-name symlinks (target/bin/ has absolute symlinks that won't work)
+          cd toolchain/arm-hisiv510-linux/bin
+          for f in arm-hisiv510-linux-uclibcgnueabi-*; do
+            ln -sf "$f" "${f/-uclibcgnueabi/}"
+          done
+
+      - name: Build
+        run: |
+          export PATH="$PWD/toolchain/arm-hisiv510-linux/bin:$PATH"
+          make ${{ matrix.board }}_config
+          cp reg_info_${{ matrix.board }}.bin .reg
+          make CROSS_COMPILE=arm-hisiv510-linux- -j$(nproc)
+          make CROSS_COMPILE=arm-hisiv510-linux- mini-boot.bin
+          cp mini-boot.bin u-boot-${{ matrix.board }}-universal.bin
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: u-boot-${{ matrix.board }}-universal
+          path: u-boot-${{ matrix.board }}-universal.bin
+
+  # Publish job — common failure modes:
+  #   "GH_TOKEN environment variable required" / empty token: secret
+  #     FIRMWARE_RELEASE_TOKEN is missing or unreadable. Set via the
+  #     org-level Actions secret on OpenIPC.
+  #   401 Bad credentials: PAT expired (fine-grained max is 1 year) or
+  #     revoked. Mint a new fine-grained PAT and update the secret.
+  #   403 Forbidden: PAT lacks Contents:write on OpenIPC/firmware, or
+  #     its repo selector doesn't include OpenIPC/firmware.
+  #   404 on `gh release upload latest`: the `latest` tag was deleted in
+  #     OpenIPC/firmware. Recreate it before retrying.
+  publish:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Upload to OpenIPC/firmware latest release
+        env:
+          GH_TOKEN: ${{ secrets.FIRMWARE_RELEASE_TOKEN }}
+        run: |
+          set -eu
+          # Releases API occasionally returns 502/503 ("Unicorn!"). Retry
+          # with linear backoff: 10s, 20s, 30s, 40s — total ~100s.
+          upload() {
+            local f="$1" i
+            for i in 1 2 3 4 5; do
+              if gh release upload latest "$f" --clobber -R OpenIPC/firmware; then
+                return 0
+              fi
+              [ "$i" = "5" ] && return 1
+              echo "upload attempt $i failed; sleeping $((i*10))s" >&2
+              sleep $((i*10))
+            done
+          }
+          for soc in hi3518ev200 hi3516cv200; do
+            f="artifacts/u-boot-${soc}-universal/u-boot-${soc}-universal.bin"
+            test -f "$f"
+            upload "$f"
+          done
