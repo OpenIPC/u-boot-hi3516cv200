@@ -23,7 +23,8 @@
 PLATFORM_RELFLAGS += -fno-strict-aliasing -fno-common -ffixed-r8
 #		     -msoft-float
 
-# Make ARMv5 to allow more compilers to work, even though its v7a.
+# Hi3518EV200 / Hi3516CV200 are ARM926EJ-S (ARMv5TEJ), per the QEMU
+# machine model in widgetii/qemu-hisilicon. Stay on armv5te to match.
 PLATFORM_RELFLAGS += -fno-aggressive-loop-optimizations
 PLATFORM_CPPFLAGS += -march=armv5te
 PLATFORM_CPPFLAGS += -mno-unaligned-access
