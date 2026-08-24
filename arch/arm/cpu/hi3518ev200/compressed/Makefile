@@ -17,7 +17,7 @@ OBJCOPY  := $(CROSS_COMPILE)objcopy
 BOOT     := mini-boot
 TEXTBASE := 0x80700000
 
-CFLAGS   := -g -O2 -fno-strict-aliasing -fno-common -ffixed-r8 \
+CFLAGS   := -g -Os -ffunction-sections -fdata-sections -fno-strict-aliasing -fno-common -ffixed-r8 \
 	-D__KERNEL__ -DTEXT_BASE=$(TEXTBASE) \
 	-I$(TOPDIR)/include \
 	-I$(TOPDIR)/drivers/ddr \
@@ -90,7 +90,7 @@ $(BOOT).tmp: $(BOOT).elf
 	$(OBJCOPY) --gap-fill=0xff -O binary $< $@
 
 $(BOOT).elf: image_data.lzma $(SRC) $(START) $(COBJS)
-	$(LD) -Bstatic -T mini-boot.lds -Ttext $(TEXTBASE) $(START) \
+	$(LD) -Bstatic --gc-sections -T mini-boot.lds -Ttext $(TEXTBASE) $(START) \
 		$(COBJS) -Map $(BOOT).map -o $@
 
 .PHONY: regfile
@@ -111,6 +111,7 @@ start.o: start.S
 
 image_data.lzma: $(BINIMAGE)
 	lzma -fkzc -7 $< > $@
+
 
 %.o: %.c
 	$(CC) $(CFLAGS) -Wall -Wstrict-prototypes \

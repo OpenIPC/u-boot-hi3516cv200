@@ -74,6 +74,50 @@ jobs:
             exit 1
           fi
 
+      - name: Check bootrom SRAM window fit
+        run: |
+          # The bootrom copies this image into SRAM at 0x04010500 and SRAM
+          # ends at 0x04014000, so everything ahead of the compressed payload
+          # must fit in 0x3B00 (15104) bytes. Overrun it and the chip cannot
+          # be recovered over UART at all -- it stops answering mid-upload.
+          # See OpenIPC/firmware#2299.
+          #
+          # mini-boot.lds ASSERTs the same number at link time; this re-checks
+          # the artifact we actually ship, because mini-boot.bin is assembled
+          # from the ELF by dd after linking.
+          #
+          # The window is not met yet (#5), so the hard gate here is a ratchet
+          # against the current size -- the shortfall is reported every build
+          # so it stays visible until it reaches zero.
+          python3 - "u-boot-${{ matrix.board }}-universal.bin" <<'EOF'
+          import sys
+          WINDOW = 0x3B00     # what the bootrom can actually load into SRAM
+          CEILING = 0x4400    # what this build achieves; ratchet, lower only
+          d = open(sys.argv[1], 'rb').read()
+          valid = {1 << n for n in range(16, 25)}
+          off = None
+          for i in range(0x1000, min(len(d), 0x10000)):
+              if d[i] == 0x5D and int.from_bytes(d[i+1:i+5], 'little') in valid:
+                  off = i; break
+              if d[i] == 0x1F and d[i+1] == 0x8B and d[i+2] == 0x08:
+                  off = i; break
+          if off is None:
+              sys.exit("no compressed payload found in %s" % sys.argv[1])
+          print("- %s: prelude [%d/%d bytes]" % (sys.argv[1], off, WINDOW))
+          if off % 1024:
+              sys.exit("-- payload not 1 KB aligned (recovery tools round the "
+                       "boundary down to 1 KB and would clip code)")
+          if off > CEILING:
+              sys.exit("-- grew past the %d-byte ratchet by %d bytes; this "
+                       "number may only go down" % (CEILING, off - CEILING))
+          if off > WINDOW:
+              print("-- STILL %d bytes over the bootrom SRAM window: this SoC "
+                    "cannot be recovered over UART with its own u-boot. "
+                    "Tracking: OpenIPC/u-boot-hi3516cv200#5" % (off - WINDOW))
+          else:
+              print("-- margin: %d bytes" % (WINDOW - off))
+          EOF
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
