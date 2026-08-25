@@ -14,7 +14,26 @@ LD       := $(CROSS_COMPILE)ld
 OBJCOPY  := $(CROSS_COMPILE)objcopy
 
 ################################################################################
+# Two variants are built from these sources:
+#
+#   (default)     the image that gets flashed and boots the camera.  Full DDR
+#                 training.  Does not fit the boot ROM's SRAM window yet, so
+#                 its size ASSERT is a ratchet -- see mini-boot.lds.
+#   RECOVERY=1    the image defib uploads over UART to revive a blank board.
+#                 No DDR training, so it fits the window with room to spare.
+#                 Its size ASSERT is the real limit and must never be relaxed.
+#
+# The two share object file names, so build them in separate passes with a
+# `clean` in between -- which is what the top-level mini-boot targets do.
+ifeq ($(RECOVERY),1)
+BOOT     := mini-boot-recovery
+RECFLAGS := -DCONFIG_MINI_BOOT_RECOVERY
+CEILING  := 0x3800
+else
 BOOT     := mini-boot
+RECFLAGS :=
+CEILING  := 0x4400
+endif
 TEXTBASE := 0x80700000
 
 CFLAGS   := -g -Os -ffunction-sections -fdata-sections -fno-strict-aliasing -fno-common -ffixed-r8 \
@@ -25,7 +44,7 @@ CFLAGS   := -g -Os -ffunction-sections -fdata-sections -fno-strict-aliasing -fno
 	-fno-aggressive-loop-optimizations \
 	-mno-unaligned-access \
 	-pipe  -DCONFIG_ARM -D__ARM__ -marm  -mabi=aapcs-linux \
-	-mno-thumb-interwork -march=armv5te $(MKFLAGS)
+	-mno-thumb-interwork -march=armv5te $(RECFLAGS) $(MKFLAGS)
 
 ################################################################################
 
@@ -43,6 +62,17 @@ COBJS := chip.o time.o timer.o\
 	mmu.o cache-cp15.o \
 	image_data.o \
 	div0.o _divsi3.o _udivsi3.o
+
+# The two variants share object file names but are compiled with different
+# flags, and make does not track flag changes: after building one, the other
+# would happily relink the objects it finds.  In the direction that matters
+# that is silent and dangerous -- the flashed image would come out with DDR
+# training compiled out, and still pass its (looser) size ceiling.  Record
+# which variant the objects belong to and wipe them when it changes, so the
+# build order can never matter, whoever invokes this directory.
+BUILT_AS := .built-as
+$(shell [ "`cat $(BUILT_AS) 2>/dev/null`" = "$(BOOT)" ] || \
+	rm -f $(COBJS) $(START) $(BUILT_AS))
 
 SSRC  := arch/arm/cpu/hi3518ev200/start.S \
 	arch/arm/cpu/hi3518ev200/lowlevel_init.S \
@@ -90,7 +120,9 @@ $(BOOT).tmp: $(BOOT).elf
 	$(OBJCOPY) --gap-fill=0xff -O binary $< $@
 
 $(BOOT).elf: image_data.lzma $(SRC) $(START) $(COBJS)
-	$(LD) -Bstatic --gc-sections -T mini-boot.lds -Ttext $(TEXTBASE) $(START) \
+	@echo $(BOOT) > $(BUILT_AS)
+	$(LD) -Bstatic --gc-sections -T mini-boot.lds -Ttext $(TEXTBASE) \
+		--defsym MINI_BOOT_SIZE_CEILING=$(CEILING) $(START) \
 		$(COBJS) -Map $(BOOT).map -o $@
 
 .PHONY: regfile
@@ -130,7 +162,7 @@ $(SRC):
 ################################################################################
 TMPS := $(COBJS) start.o $(SRC) \
 	$(BOOT).map $(BOOT).elf $(BOOT).srec $(BOOT).bin $(BOOT).text $(BOOT).tmp \
-	image_data.lzma
+	image_data.lzma $(BUILT_AS)
 
 distclean: clean
 

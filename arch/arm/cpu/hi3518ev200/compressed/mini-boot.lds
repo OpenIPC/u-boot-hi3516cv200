@@ -17,11 +17,13 @@ MINI_BOOT_SRAM_WINDOW = 0x3B00;
  * is the number to aim at, not 0x3B00.  */
 MINI_BOOT_SRAM_TARGET = 0x3800;
 
-/* What this build actually achieves today.  It is NOT yet inside the target
- * above -- see OpenIPC/u-boot-hi3516cv200#5 -- so the assert below ratchets
- * against the current size instead: it may only ever be lowered, never
- * raised, so the gap cannot silently grow again while it is being closed. */
-MINI_BOOT_SIZE_CEILING = 0x4400;
+/* MINI_BOOT_SIZE_CEILING is supplied by the Makefile with --defsym, because
+ * the two variants built from these sources have different limits: the
+ * recovery image is held to MINI_BOOT_SRAM_TARGET for real, while the flashed
+ * image is not inside it yet (#5) and ratchets against its current size --
+ * that number may only ever be lowered, never raised, so the gap cannot
+ * silently grow again while it is being closed.  Linking without the --defsym
+ * is an error rather than a default, so neither variant can lose its gate.  */
 
 SECTIONS
 {

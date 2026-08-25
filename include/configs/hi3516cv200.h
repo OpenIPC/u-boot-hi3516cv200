@@ -352,3 +352,13 @@
 
 #endif	/* __CONFIG_H */
 
+/* The UART-recovery mini-boot has to fit the boot ROM's SRAM window, which
+ * the full one does not (OpenIPC/u-boot-hi3516cv200#5).  DDR training is by
+ * far the largest thing in it and is what a bench recovery can most safely
+ * do without: the static DDR setup from reg_info still runs, and the image
+ * only has to survive one decompression into RAM with an operator present.
+ * The flashed boot path keeps training -- that is what makes RAM work across
+ * silicon and temperature spread, and this must never turn it off there.  */
+#ifdef CONFIG_MINI_BOOT_RECOVERY
+#undef CONFIG_DDR_TRAINING_V2
+#endif
