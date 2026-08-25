@@ -74,6 +74,71 @@ jobs:
             exit 1
           fi
 
+      - name: Check bootrom SRAM window fit
+        run: |
+          # The bootrom copies this image into SRAM at 0x04010500 and SRAM
+          # ends at 0x04014000, so everything ahead of the compressed payload
+          # must fit in 0x3B00 (15104) bytes. Overrun it and the chip cannot
+          # be recovered over UART at all -- it stops answering mid-upload.
+          # See OpenIPC/firmware#2299. The window is not a whole number of
+          # 1 KB blocks and the payload must start on a 1 KB boundary, so the
+          # number to reach is the window rounded down: 0x3800 (14336).
+          #
+          # mini-boot.lds ASSERTs the same number at link time; this re-checks
+          # the artifact we actually ship, because mini-boot.bin is assembled
+          # from the ELF by dd after linking.
+          #
+          # The boundary is found by locating the exact image_data.lzma this
+          # build produced and requiring it to appear once. Scanning for a
+          # compression header instead -- which is what recovery tools have to
+          # do, having only the image -- can match a coincidental byte
+          # sequence in the prelude and validate a boundary that is not the
+          # payload's, i.e. pass while the real prelude is oversized.
+          #
+          # The window is not met yet (#5), so the hard gate here is a ratchet
+          # against the current size -- the shortfall is reported every build
+          # so it stays visible until it reaches zero.
+          python3 - "u-boot-${{ matrix.board }}-universal.bin" \
+                   $(find arch/arm/cpu -name image_data.lzma) <<'EOF'
+          import sys
+          WINDOW = 0x3B00     # what the bootrom can actually load into SRAM
+          TARGET = WINDOW & ~0x3FF   # ...rounded down, because of the ALIGN below
+          CEILING = 0x4400    # what this build achieves; ratchet, lower only
+          art, payloads = sys.argv[1], sys.argv[2:]
+          if len(payloads) != 1:
+              sys.exit("expected exactly one image_data.lzma under arch/arm/cpu,"
+                       " found %d%s" % (len(payloads),
+                                        ": " + " ".join(payloads) if payloads else ""))
+          d = open(art, 'rb').read()
+          p = open(payloads[0], 'rb').read()
+          off = d.find(p)
+          if off < 0:
+              sys.exit("%s does not contain %s -- the shipped image is not the "
+                       "one this build linked" % (art, payloads[0]))
+          if d.find(p, off + 1) != -1:
+              sys.exit("%s occurs more than once in %s -- the prelude boundary "
+                       "is ambiguous" % (payloads[0], art))
+          print("- %s: prelude [%d/%d bytes]" % (art, off, TARGET))
+          if off % 1024:
+              sys.exit("-- payload not 1 KB aligned (recovery tools round the "
+                       "boundary down to 1 KB and would clip code)")
+          if off > CEILING:
+              sys.exit("-- grew past the %d-byte ratchet by %d bytes; this "
+                       "number may only go down" % (CEILING, off - CEILING))
+          if off > TARGET:
+              # Warning, not a failure: this image still boots from flash, and
+              # failing here would stop both boards shipping a working
+              # bootloader over a recovery-path-only defect. Annotated so the
+              # gap is visible in the checks UI, not just in the log.
+              print("::warning title=mini-boot exceeds bootrom SRAM window::"
+                    "%s prelude is %d bytes over the %d-byte target; this SoC "
+                    "cannot be recovered over UART with its own u-boot. "
+                    "Tracking: OpenIPC/u-boot-hi3516cv200#5"
+                    % (art, off - TARGET, TARGET))
+          else:
+              print("-- margin: %d bytes" % (TARGET - off))
+          EOF
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
