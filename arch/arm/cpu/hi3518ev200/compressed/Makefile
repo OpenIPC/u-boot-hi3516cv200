@@ -63,6 +63,17 @@ COBJS := chip.o time.o timer.o\
 	image_data.o \
 	div0.o _divsi3.o _udivsi3.o
 
+# The two variants share object file names but are compiled with different
+# flags, and make does not track flag changes: after building one, the other
+# would happily relink the objects it finds.  In the direction that matters
+# that is silent and dangerous -- the flashed image would come out with DDR
+# training compiled out, and still pass its (looser) size ceiling.  Record
+# which variant the objects belong to and wipe them when it changes, so the
+# build order can never matter, whoever invokes this directory.
+BUILT_AS := .built-as
+$(shell [ "`cat $(BUILT_AS) 2>/dev/null`" = "$(BOOT)" ] || \
+	rm -f $(COBJS) $(START) $(BUILT_AS))
+
 SSRC  := arch/arm/cpu/hi3518ev200/start.S \
 	arch/arm/cpu/hi3518ev200/lowlevel_init.S \
 	arch/arm/cpu/hi3518ev200/chip.c \
@@ -109,6 +120,7 @@ $(BOOT).tmp: $(BOOT).elf
 	$(OBJCOPY) --gap-fill=0xff -O binary $< $@
 
 $(BOOT).elf: image_data.lzma $(SRC) $(START) $(COBJS)
+	@echo $(BOOT) > $(BUILT_AS)
 	$(LD) -Bstatic --gc-sections -T mini-boot.lds -Ttext $(TEXTBASE) \
 		--defsym MINI_BOOT_SIZE_CEILING=$(CEILING) $(START) \
 		$(COBJS) -Map $(BOOT).map -o $@
@@ -150,7 +162,7 @@ $(SRC):
 ################################################################################
 TMPS := $(COBJS) start.o $(SRC) \
 	$(BOOT).map $(BOOT).elf $(BOOT).srec $(BOOT).bin $(BOOT).text $(BOOT).tmp \
-	image_data.lzma
+	image_data.lzma $(BUILT_AS)
 
 distclean: clean
 
