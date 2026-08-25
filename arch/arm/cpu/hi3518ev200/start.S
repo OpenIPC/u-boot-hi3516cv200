@@ -177,10 +177,14 @@ reset:
 #endif
 
 	/* after ziju, we need ddr traning */
-#ifdef CONFIG_DDR_TRAINING_V2
+	/* Unconditional on purpose.  start_ddr_training() is itself guarded
+	 * by CONFIG_DDR_TRAINING_V2, but it also performs the post-training
+	 * DMC write the vendor marks as required for chip compatibility.
+	 * Guarding the call site as well would silently drop that write in a
+	 * build with training disabled -- see the recovery variant in
+	 * compressed/Makefile.  */
 	ldr	r0, =REG_BASE_SCTL
-	bl	start_ddr_training       /* DDR training */
-#endif
+	bl	start_ddr_training       /* DDR training + post-training DMC cfg */
 
 	ldr	r0, =SYS_CTRL_REG_BASE
 	ldr	r1, [r0, #REG_SC_GEN2]
@@ -254,10 +258,14 @@ do_clr_remap:
 	bl	start_svb
 #endif
 
-#ifdef CONFIG_DDR_TRAINING_V2
+	/* Unconditional on purpose.  start_ddr_training() is itself guarded
+	 * by CONFIG_DDR_TRAINING_V2, but it also performs the post-training
+	 * DMC write the vendor marks as required for chip compatibility.
+	 * Guarding the call site as well would silently drop that write in a
+	 * build with training disabled -- see the recovery variant in
+	 * compressed/Makefile.  */
 	ldr	r0, =REG_BASE_SCTL
-	bl	start_ddr_training       /* DDR training */
-#endif
+	bl	start_ddr_training       /* DDR training + post-training DMC cfg */
 /* check_boot_mode */
 	ldr     r0, =SYS_CTRL_REG_BASE
 	ldr     r0, [r0, #REG_SYSSTAT]

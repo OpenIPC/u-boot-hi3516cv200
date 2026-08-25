@@ -58,6 +58,11 @@ jobs:
           make CROSS_COMPILE=arm-hisiv510-linux- -j$(nproc)
           make CROSS_COMPILE=arm-hisiv510-linux- mini-boot.bin
           cp mini-boot.bin u-boot-${{ matrix.board }}-universal.bin
+          # The UART-recovery image: same sources, no DDR training, small
+          # enough for the boot ROM to accept. Built second because it
+          # cleans the compressed dir (the two variants share object names).
+          make CROSS_COMPILE=arm-hisiv510-linux- mini-boot-recovery.bin
+          cp mini-boot-recovery.bin u-boot-${{ matrix.board }}-recovery.bin
 
       - name: Check partition fit
         run: |
@@ -65,28 +70,35 @@ jobs:
           # across every NOR/NAND/UBI variant. Anything past that
           # overflows into env at offset 0x40000 and bricks the device
           # on upgrade. Mirrors OpenIPC/firmware Makefile CHECK_SIZE.
-          FILE=u-boot-${{ matrix.board }}-universal.bin
           LIMIT_KB=256
-          SIZE_KB=$(($(stat -c %s "$FILE") / 1024))
-          echo "- $FILE: [${SIZE_KB}KB/${LIMIT_KB}KB]"
-          if [ "$SIZE_KB" -gt "$LIMIT_KB" ]; then
-            echo "-- size exceeded by: $((SIZE_KB - LIMIT_KB))KB"
-            exit 1
-          fi
+          for FILE in u-boot-${{ matrix.board }}-universal.bin \
+                      u-boot-${{ matrix.board }}-recovery.bin; do
+            SIZE_KB=$(($(stat -c %s "$FILE") / 1024))
+            echo "- $FILE: [${SIZE_KB}KB/${LIMIT_KB}KB]"
+            if [ "$SIZE_KB" -gt "$LIMIT_KB" ]; then
+              echo "-- size exceeded by: $((SIZE_KB - LIMIT_KB))KB"
+              exit 1
+            fi
+          done
 
       - name: Check bootrom SRAM window fit
         run: |
-          # The bootrom copies this image into SRAM at 0x04010500 and SRAM
-          # ends at 0x04014000, so everything ahead of the compressed payload
-          # must fit in 0x3B00 (15104) bytes. Overrun it and the chip cannot
-          # be recovered over UART at all -- it stops answering mid-upload.
+          # The bootrom copies the SPL into SRAM at 0x04010500 and SRAM ends
+          # at 0x04014000, so everything ahead of the compressed payload must
+          # fit in 0x3B00 (15104) bytes. Overrun it and the chip cannot be
+          # recovered over UART at all -- it stops answering mid-upload.
           # See OpenIPC/firmware#2299. The window is not a whole number of
           # 1 KB blocks and the payload must start on a 1 KB boundary, so the
           # number to reach is the window rounded down: 0x3800 (14336).
           #
-          # mini-boot.lds ASSERTs the same number at link time; this re-checks
-          # the artifact we actually ship, because mini-boot.bin is assembled
-          # from the ELF by dd after linking.
+          # Two images, two policies:
+          #   recovery   is the one uploaded over UART. It MUST fit. Hard fail.
+          #   universal  is the one flashed. It does not fit yet (#5), so it
+          #              ratchets against its current size and warns.
+          #
+          # mini-boot.lds ASSERTs the same numbers at link time; this re-checks
+          # the artifacts we actually ship, because the .bin files are
+          # assembled from the ELFs by dd after linking.
           #
           # The boundary is found by locating the exact image_data.lzma this
           # build produced and requiring it to appear once. Scanning for a
@@ -94,47 +106,58 @@ jobs:
           # do, having only the image -- can match a coincidental byte
           # sequence in the prelude and validate a boundary that is not the
           # payload's, i.e. pass while the real prelude is oversized.
-          #
-          # The window is not met yet (#5), so the hard gate here is a ratchet
-          # against the current size -- the shortfall is reported every build
-          # so it stays visible until it reaches zero.
           python3 - "u-boot-${{ matrix.board }}-universal.bin" \
-                   $(find arch/arm/cpu -name image_data.lzma) <<'EOF'
+                    "u-boot-${{ matrix.board }}-recovery.bin" \
+                    $(find arch/arm/cpu -name image_data.lzma) <<'EOF'
           import sys
           WINDOW = 0x3B00     # what the bootrom can actually load into SRAM
-          TARGET = WINDOW & ~0x3FF   # ...rounded down, because of the ALIGN below
-          CEILING = 0x4400    # what this build achieves; ratchet, lower only
-          art, payloads = sys.argv[1], sys.argv[2:]
+          TARGET = WINDOW & ~0x3FF   # ...rounded down, because of the ALIGN
+          RATCHET = 0x4400    # what the flashed image achieves; lower only
+          universal, recovery, payloads = sys.argv[1], sys.argv[2], sys.argv[3:]
           if len(payloads) != 1:
               sys.exit("expected exactly one image_data.lzma under arch/arm/cpu,"
                        " found %d%s" % (len(payloads),
                                         ": " + " ".join(payloads) if payloads else ""))
-          d = open(art, 'rb').read()
           p = open(payloads[0], 'rb').read()
-          off = d.find(p)
-          if off < 0:
-              sys.exit("%s does not contain %s -- the shipped image is not the "
-                       "one this build linked" % (art, payloads[0]))
-          if d.find(p, off + 1) != -1:
-              sys.exit("%s occurs more than once in %s -- the prelude boundary "
-                       "is ambiguous" % (payloads[0], art))
-          print("- %s: prelude [%d/%d bytes]" % (art, off, TARGET))
-          if off % 1024:
-              sys.exit("-- payload not 1 KB aligned (recovery tools round the "
-                       "boundary down to 1 KB and would clip code)")
-          if off > CEILING:
-              sys.exit("-- grew past the %d-byte ratchet by %d bytes; this "
-                       "number may only go down" % (CEILING, off - CEILING))
+
+          def prelude(art):
+              d = open(art, 'rb').read()
+              off = d.find(p)
+              if off < 0:
+                  sys.exit("%s does not contain %s -- the shipped image is not "
+                           "the one this build linked" % (art, payloads[0]))
+              if d.find(p, off + 1) != -1:
+                  sys.exit("%s occurs more than once in %s -- the prelude "
+                           "boundary is ambiguous" % (payloads[0], art))
+              if off % 1024:
+                  sys.exit("-- %s: payload not 1 KB aligned (recovery tools "
+                           "round the boundary down to 1 KB and would clip "
+                           "code)" % art)
+              return off
+
+          off = prelude(recovery)
+          print("- %s: prelude [%d/%d bytes]" % (recovery, off, TARGET))
           if off > TARGET:
-              # Warning, not a failure: this image still boots from flash, and
-              # failing here would stop both boards shipping a working
-              # bootloader over a recovery-path-only defect. Annotated so the
-              # gap is visible in the checks UI, not just in the log.
-              print("::warning title=mini-boot exceeds bootrom SRAM window::"
-                    "%s prelude is %d bytes over the %d-byte target; this SoC "
-                    "cannot be recovered over UART with its own u-boot. "
-                    "Tracking: OpenIPC/u-boot-hi3516cv200#5"
-                    % (art, off - TARGET, TARGET))
+              sys.exit("-- the recovery image MUST fit the bootrom SRAM "
+                       "window; it is %d bytes over. This is the image that "
+                       "revives a blank board, so this gate does not ratchet."
+                       % (off - TARGET))
+          print("-- margin: %d bytes" % (TARGET - off))
+
+          off = prelude(universal)
+          print("- %s: prelude [%d/%d bytes]" % (universal, off, TARGET))
+          if off > RATCHET:
+              sys.exit("-- grew past the %d-byte ratchet by %d bytes; this "
+                       "number may only go down" % (RATCHET, off - RATCHET))
+          if off > TARGET:
+              # Warning, not a failure: this image boots from flash, and the
+              # recovery image above covers the UART path. Annotated so the
+              # gap stays visible in the checks UI, not just in the log.
+              print("::warning title=flashed mini-boot exceeds bootrom SRAM "
+                    "window::%s prelude is %d bytes over the %d-byte target, "
+                    "so this image cannot itself be uploaded over UART -- use "
+                    "the recovery image for that. Tracking: "
+                    "OpenIPC/u-boot-hi3516cv200#5" % (universal, off - TARGET, TARGET))
           else:
               print("-- margin: %d bytes" % (TARGET - off))
           EOF
@@ -144,6 +167,13 @@ jobs:
         with:
           name: u-boot-${{ matrix.board }}-universal
           path: u-boot-${{ matrix.board }}-universal.bin
+
+      - name: Upload recovery artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: u-boot-${{ matrix.board }}-recovery
+          path: u-boot-${{ matrix.board }}-recovery.bin
+
 
   # QEMU smoke test — gates publish on actually-bootable binaries.
   # Boots the freshly-built u-boot in widgetii/qemu-hisilicon's
@@ -200,35 +230,49 @@ jobs:
         with:
           name: u-boot-${{ matrix.board }}-universal
 
+      - name: Download recovery artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: u-boot-${{ matrix.board }}-recovery
+
+      # Both variants are booted. The recovery one drops DDR training, so
+      # "Uncompress.........Ok" followed by a U-Boot banner is the check that
+      # matters there: it means DDR came up from the static reg_info setup
+      # alone and the payload decompressed into it.
       - name: Smoke-test in QEMU
-        timeout-minutes: 2
+        timeout-minutes: 4
         run: |
-          UBOOT="$PWD/u-boot-${{ matrix.board }}-universal.bin"
-          test -f "$UBOOT"
-          dd if=/dev/zero of=/tmp/flash.bin bs=1M count=8 2>/dev/null
-          dd if="$UBOOT" of=/tmp/flash.bin bs=1 conv=notrunc 2>/dev/null
-          mkfifo /tmp/uart.in /tmp/uart.out
           chmod +x ./qemu-arm
-          ./qemu-arm \
-            -M ${{ matrix.machine }},flash-file=/tmp/flash.bin \
-            -nographic -serial pipe:/tmp/uart \
-            -monitor none > /tmp/qemu.log 2>&1 &
-          QEMU_PID=$!
-          timeout 10 cat /tmp/uart.out > /tmp/uboot.txt || true
-          kill "$QEMU_PID" 2>/dev/null || true
-          wait 2>/dev/null || true
-          echo "== captured u-boot output =="
-          cat /tmp/uboot.txt
-          echo
-          if grep -qE 'U-Boot |Hit any key|CPU:|DRAM:|Board:' /tmp/uboot.txt; then
-            echo "PASS: u-boot booted past System startup"
-          else
-            echo "FAIL: u-boot did not get past System startup"
+          rc=0
+          for variant in universal recovery; do
+            UBOOT="$PWD/u-boot-${{ matrix.board }}-${variant}.bin"
+            test -f "$UBOOT"
+            rm -f /tmp/uart.in /tmp/uart.out /tmp/uboot.txt
+            dd if=/dev/zero of=/tmp/flash.bin bs=1M count=8 2>/dev/null
+            dd if="$UBOOT" of=/tmp/flash.bin bs=1 conv=notrunc 2>/dev/null
+            mkfifo /tmp/uart.in /tmp/uart.out
+            ./qemu-arm \
+              -M ${{ matrix.machine }},flash-file=/tmp/flash.bin \
+              -nographic -serial pipe:/tmp/uart \
+              -monitor none > /tmp/qemu.log 2>&1 &
+            QEMU_PID=$!
+            timeout 10 cat /tmp/uart.out > /tmp/uboot.txt || true
+            kill "$QEMU_PID" 2>/dev/null || true
+            wait 2>/dev/null || true
+            echo "== $variant: captured u-boot output =="
+            cat /tmp/uboot.txt
             echo
-            echo "== qemu stderr =="
-            tail -40 /tmp/qemu.log || true
-            exit 1
-          fi
+            if grep -qE 'U-Boot |Hit any key|CPU:|DRAM:|Board:' /tmp/uboot.txt; then
+              echo "PASS: $variant booted past System startup"
+            else
+              echo "FAIL: $variant did not get past System startup"
+              echo
+              echo "== qemu stderr =="
+              tail -40 /tmp/qemu.log || true
+              rc=1
+            fi
+          done
+          exit $rc
 
   # Publish job — common failure modes:
   #   "GH_TOKEN environment variable required" / empty token: secret
@@ -269,7 +313,9 @@ jobs:
             done
           }
           for soc in hi3518ev200 hi3516cv200; do
-            f="artifacts/u-boot-${soc}-universal/u-boot-${soc}-universal.bin"
-            test -f "$f"
-            upload "$f"
+            for variant in universal recovery; do
+              f="artifacts/u-boot-${soc}-${variant}/u-boot-${soc}-${variant}.bin"
+              test -f "$f"
+              upload "$f"
+            done
           done

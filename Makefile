@@ -434,6 +434,17 @@ mini-boot.bin: $(TOPDIR)/u-boot.bin
 		CROSS_COMPILE=$(CROSS_COMPILE) \
 		BINIMAGE=$(TOPDIR)/u-boot.bin TOPDIR=$(TOPDIR)
 
+# The UART-recovery image: same sources, no DDR training, small enough for
+# the boot ROM to accept over UART.  Built in its own pass because the two
+# variants share object file names.
+.PHONY: mini-boot-recovery.bin
+mini-boot-recovery.bin: $(TOPDIR)/u-boot.bin
+	$(MAKE) -C $(TOPDIR)/arch/$(ARCH)/cpu/$(CPU)/compressed \
+		CROSS_COMPILE=$(CROSS_COMPILE) clean
+	$(MAKE) -C $(TOPDIR)/arch/$(ARCH)/cpu/$(CPU)/compressed \
+		CROSS_COMPILE=$(CROSS_COMPILE) RECOVERY=1 \
+		BINIMAGE=$(TOPDIR)/u-boot.bin TOPDIR=$(TOPDIR)
+
 .PHONY: mini-boot.clean
 mini-boot.clean: $(TOPDIR)/u-boot.bin
 	make -C $(TOPDIR)/arch/$(ARCH)/cpu/$(CPU)/compressed \

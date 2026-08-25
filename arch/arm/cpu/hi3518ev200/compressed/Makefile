@@ -14,7 +14,26 @@ LD       := $(CROSS_COMPILE)ld
 OBJCOPY  := $(CROSS_COMPILE)objcopy
 
 ################################################################################
+# Two variants are built from these sources:
+#
+#   (default)     the image that gets flashed and boots the camera.  Full DDR
+#                 training.  Does not fit the boot ROM's SRAM window yet, so
+#                 its size ASSERT is a ratchet -- see mini-boot.lds.
+#   RECOVERY=1    the image defib uploads over UART to revive a blank board.
+#                 No DDR training, so it fits the window with room to spare.
+#                 Its size ASSERT is the real limit and must never be relaxed.
+#
+# The two share object file names, so build them in separate passes with a
+# `clean` in between -- which is what the top-level mini-boot targets do.
+ifeq ($(RECOVERY),1)
+BOOT     := mini-boot-recovery
+RECFLAGS := -DCONFIG_MINI_BOOT_RECOVERY
+CEILING  := 0x3800
+else
 BOOT     := mini-boot
+RECFLAGS :=
+CEILING  := 0x4400
+endif
 TEXTBASE := 0x80700000
 
 CFLAGS   := -g -Os -ffunction-sections -fdata-sections -fno-strict-aliasing -fno-common -ffixed-r8 \
@@ -25,7 +44,7 @@ CFLAGS   := -g -Os -ffunction-sections -fdata-sections -fno-strict-aliasing -fno
 	-fno-aggressive-loop-optimizations \
 	-mno-unaligned-access \
 	-pipe  -DCONFIG_ARM -D__ARM__ -marm  -mabi=aapcs-linux \
-	-mno-thumb-interwork -march=armv5te $(MKFLAGS)
+	-mno-thumb-interwork -march=armv5te $(RECFLAGS) $(MKFLAGS)
 
 ################################################################################
 
@@ -90,7 +109,8 @@ $(BOOT).tmp: $(BOOT).elf
 	$(OBJCOPY) --gap-fill=0xff -O binary $< $@
 
 $(BOOT).elf: image_data.lzma $(SRC) $(START) $(COBJS)
-	$(LD) -Bstatic --gc-sections -T mini-boot.lds -Ttext $(TEXTBASE) $(START) \
+	$(LD) -Bstatic --gc-sections -T mini-boot.lds -Ttext $(TEXTBASE) \
+		--defsym MINI_BOOT_SIZE_CEILING=$(CEILING) $(START) \
 		$(COBJS) -Map $(BOOT).map -o $@
 
 .PHONY: regfile
