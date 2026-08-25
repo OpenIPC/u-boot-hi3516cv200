@@ -11,7 +11,13 @@ ENTRY(_start)
  * over UART at all.  See OpenIPC/firmware#2299.  */
 MINI_BOOT_SRAM_WINDOW = 0x3B00;
 
-/* What this build actually achieves today.  It is NOT yet inside the window
+/* The window is not a multiple of 1 KB, and the payload has to start on a
+ * 1 KB boundary (see the ALIGN below), so the largest prelude that is both
+ * loadable and not clipped is the window rounded down: 0x3800 (14336).  That
+ * is the number to aim at, not 0x3B00.  */
+MINI_BOOT_SRAM_TARGET = 0x3800;
+
+/* What this build actually achieves today.  It is NOT yet inside the target
  * above -- see OpenIPC/u-boot-hi3516cv200#5 -- so the assert below ratchets
  * against the current size instead: it may only ever be lowered, never
  * raised, so the gap cannot silently grow again while it is being closed. */
@@ -58,4 +64,4 @@ SECTIONS
 }
 
 ASSERT(__image_start - ADDR(.text) <= MINI_BOOT_SIZE_CEILING,
-	"mini-boot grew past MINI_BOOT_SIZE_CEILING. The target is MINI_BOOT_SRAM_WINDOW (0x3B00) -- anything above that cannot be recovered over UART at all -- so this must go down, not up. See OpenIPC/u-boot-hi3516cv200#5.")
+	"mini-boot grew past MINI_BOOT_SIZE_CEILING. The target is MINI_BOOT_SRAM_TARGET (0x3800) -- anything above that cannot be recovered over UART at all -- so this must go down, not up. See OpenIPC/u-boot-hi3516cv200#5.")
