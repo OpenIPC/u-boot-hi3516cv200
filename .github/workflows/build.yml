@@ -12,7 +12,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        board: [hi3518ev200, hi3516cv200]
+        # `name` is what gets published, `config` is the u-boot board config,
+        # and `reg` is the DDR register table dd'd in at offset 64 of
+        # mini-boot.bin. They are separate because hi3518ev200 ships twice:
+        # its stock table programs the memory controller for DDR2
+        # (0x20111050 = 0x15) and a board built with DDR3 never comes up on
+        # it -- the SPL runs, DDR does not, and the camera looks bricked.
+        # See OpenIPC/firmware#2299. reg_info_hi3516cv200.bin is the DDR3
+        # table for this silicon; it is byte-identical to the one read out of
+        # the vendor bootloader of the hi3518ev200 board in that issue, so it
+        # is shared rather than copied.
+        include:
+          - { name: hi3518ev200, config: hi3518ev200, reg: reg_info_hi3518ev200.bin }
+          - { name: hi3518ev200-ddr3, config: hi3518ev200, reg: reg_info_hi3516cv200.bin }
+          - { name: hi3516cv200, config: hi3516cv200, reg: reg_info_hi3516cv200.bin }
 
     steps:
       - name: Install 32-bit libs
@@ -53,16 +66,16 @@ jobs:
       - name: Build
         run: |
           export PATH="$PWD/toolchain/arm-hisiv510-linux/bin:$PATH"
-          make ${{ matrix.board }}_config
-          cp reg_info_${{ matrix.board }}.bin .reg
+          make ${{ matrix.config }}_config
+          cp ${{ matrix.reg }} .reg
           make CROSS_COMPILE=arm-hisiv510-linux- -j$(nproc)
           make CROSS_COMPILE=arm-hisiv510-linux- mini-boot.bin
-          cp mini-boot.bin u-boot-${{ matrix.board }}-universal.bin
+          cp mini-boot.bin u-boot-${{ matrix.name }}-universal.bin
           # The UART-recovery image: same sources, no DDR training, small
           # enough for the boot ROM to accept. Built second because it
           # cleans the compressed dir (the two variants share object names).
           make CROSS_COMPILE=arm-hisiv510-linux- mini-boot-recovery.bin
-          cp mini-boot-recovery.bin u-boot-${{ matrix.board }}-recovery.bin
+          cp mini-boot-recovery.bin u-boot-${{ matrix.name }}-recovery.bin
 
       - name: Check partition fit
         run: |
@@ -71,8 +84,8 @@ jobs:
           # overflows into env at offset 0x40000 and bricks the device
           # on upgrade. Mirrors OpenIPC/firmware Makefile CHECK_SIZE.
           LIMIT_KB=256
-          for FILE in u-boot-${{ matrix.board }}-universal.bin \
-                      u-boot-${{ matrix.board }}-recovery.bin; do
+          for FILE in u-boot-${{ matrix.name }}-universal.bin \
+                      u-boot-${{ matrix.name }}-recovery.bin; do
             SIZE_KB=$(($(stat -c %s "$FILE") / 1024))
             echo "- $FILE: [${SIZE_KB}KB/${LIMIT_KB}KB]"
             if [ "$SIZE_KB" -gt "$LIMIT_KB" ]; then
@@ -106,8 +119,8 @@ jobs:
           # do, having only the image -- can match a coincidental byte
           # sequence in the prelude and validate a boundary that is not the
           # payload's, i.e. pass while the real prelude is oversized.
-          python3 - "u-boot-${{ matrix.board }}-universal.bin" \
-                    "u-boot-${{ matrix.board }}-recovery.bin" \
+          python3 - "u-boot-${{ matrix.name }}-universal.bin" \
+                    "u-boot-${{ matrix.name }}-recovery.bin" \
                     $(find arch/arm/cpu -name image_data.lzma) <<'EOF'
           import sys
           WINDOW = 0x3B00     # what the bootrom can actually load into SRAM
@@ -165,14 +178,14 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: u-boot-${{ matrix.board }}-universal
-          path: u-boot-${{ matrix.board }}-universal.bin
+          name: u-boot-${{ matrix.name }}-universal
+          path: u-boot-${{ matrix.name }}-universal.bin
 
       - name: Upload recovery artifact
         uses: actions/upload-artifact@v4
         with:
-          name: u-boot-${{ matrix.board }}-recovery
-          path: u-boot-${{ matrix.board }}-recovery.bin
+          name: u-boot-${{ matrix.name }}-recovery
+          path: u-boot-${{ matrix.name }}-recovery.bin
 
 
   # QEMU smoke test — gates publish on actually-bootable binaries.
@@ -185,13 +198,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Both binaries target V2-generation Hi3516CV200/Hi3518EV200
+        # Every binary here targets V2-generation Hi3516CV200/Hi3518EV200
         # silicon (ARM926EJ-S); widgetii/qemu-hisilicon's
         # `hi3516cv200` machine emulates that family. There is no
         # standalone `hi3518ev200` machine — the binary boots fine in
-        # the cv200 model since they share the SoC.
+        # the cv200 model since they share the SoC. `board` here is the
+        # published artifact name, so it carries the -ddr3 suffix too.
         include:
           - { board: hi3518ev200, machine: hi3516cv200 }
+          - { board: hi3518ev200-ddr3, machine: hi3516cv200 }
           - { board: hi3516cv200, machine: hi3516cv200 }
     steps:
       - name: Install QEMU build deps
@@ -312,7 +327,7 @@ jobs:
               sleep $((i*10))
             done
           }
-          for soc in hi3518ev200 hi3516cv200; do
+          for soc in hi3518ev200 hi3518ev200-ddr3 hi3516cv200; do
             for variant in universal recovery; do
               f="artifacts/u-boot-${soc}-${variant}/u-boot-${soc}-${variant}.bin"
               test -f "$f"
