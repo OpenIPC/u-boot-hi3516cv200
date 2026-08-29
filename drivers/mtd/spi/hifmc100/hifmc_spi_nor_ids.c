@@ -484,13 +484,13 @@ static struct spi_nor_info hifmc_spi_nor_info_table[] = {
 		&spi_driver_general,
 	},
 
+	/* MX25L6406E and MX25L6436F have the same ID, but different I/O wire */
 	{
-		"MX25L6436F",  {0xc2, 0x20, 0x17}, 3, _8M,    _64K, 3,
+		"MX25L6406E",  {0xc2, 0x20, 0x17}, 3, _8M,    _64K, 3,
 		{
-			&READ_STD(0, INFINITE, 50),
-			&READ_FAST(1, INFINITE, 133),
-			&READ_DUAL(1, INFINITE, 133),
-			&READ_DUAL_ADDR(1, INFINITE, 133),
+			&READ_STD(0, INFINITE, 33),
+			&READ_FAST(1, INFINITE, 86),
+			&READ_DUAL(1, INFINITE, 80),
 #ifndef CONFIG_CLOSE_SPI_8PIN_4IO
 			&READ_QUAD(1, INFINITE, 133),
 			&READ_QUAD_ADDR(3, INFINITE, 133),
@@ -499,7 +499,7 @@ static struct spi_nor_info hifmc_spi_nor_info_table[] = {
 		},
 
 		{
-			&WRITE_STD(0, 256, 133),
+			&WRITE_STD(0, 256, 86),
 #ifndef CONFIG_CLOSE_SPI_8PIN_4IO
 			&WRITE_QUAD_ADDR(0, 256, 133),
 #endif
@@ -507,7 +507,7 @@ static struct spi_nor_info hifmc_spi_nor_info_table[] = {
 		},
 
 		{
-			&ERASE_SECTOR_64K(0, _64K, 133),
+			&ERASE_SECTOR_64K(0, _64K, 86),
 			0
 		},
 		&spi_driver_mx25l25635e,
