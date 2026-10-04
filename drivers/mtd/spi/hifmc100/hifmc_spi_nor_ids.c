@@ -2222,6 +2222,34 @@ static struct spi_nor_info hifmc_spi_nor_info_table[] = {
 		&spi_driver_w25q256fv,
 	},
 
+	/* Boya BY25Q256 - JEDEC ID 0x68/0x49/0x19, W25Q256-compatible 4-byte mode */
+	{
+		"BY25Q256", {0x68, 0x49, 0x19}, 3, _32M, _64K, 4,
+		{
+			&READ_STD(0, INFINITE, 50),
+			&READ_FAST(1, INFINITE, 80),
+			&READ_DUAL(1, INFINITE, 80),
+#ifndef CONFIG_CLOSE_SPI_8PIN_4IO
+			&READ_QUAD(1, INFINITE, 80),
+#endif
+			0
+		},
+
+		{
+			&WRITE_STD(0, 256, 104),
+#ifndef CONFIG_CLOSE_SPI_8PIN_4IO
+			&WRITE_QUAD(0, 256, 80),
+#endif
+			0
+		},
+
+		{
+			&ERASE_SECTOR_64K(0, _64K, 104),
+			0
+		},
+		&spi_driver_w25q256fv,
+	},
+
 	/* Eon -- fit clock frequency of RDSR instruction*/
 	{
 		"EN25F80", {0x1c, 0x31, 0x14}, 3, (_64K * 16),  _64K, 3,
