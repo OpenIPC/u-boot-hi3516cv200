@@ -115,6 +115,45 @@ static void hifmc100_probe_spi_size(struct spi_flash *spi_nor_flash)
 }
 
 /*****************************************************************************/
+/*
+ * Some Xiongmai hi3518ev200 boards carry a 0xc22017 part (MX25L6406E or a
+ * clone of it) that ignores the dual-I/O read the ID table selects for
+ * MX25L6436F: every read returns zeros while writes and erases, which are
+ * single-I/O, keep working, so bootm finds no kernel (OpenIPC/firmware#646).
+ * The bootrom has just proved that a plain 0x03 read from the 24 MHz clock
+ * works on this board -- it is how we got loaded -- so read the head of the
+ * flash both ways and keep the plain read when the two disagree.
+ */
+#define HIFMC100_READ_CHECK_LEN	16
+
+static void hifmc100_check_read(struct spi_flash *spi_nor_flash)
+{
+	struct hifmc_spi *spi = hifmc100_host.spi;
+	struct spi_op saved = *spi->read;
+	u_char fast[HIFMC100_READ_CHECK_LEN], plain[HIFMC100_READ_CHECK_LEN];
+
+	if (spi->read->iftype == IF_TYPE_STD)
+		return;
+
+	if (spi_nor_flash->read(spi_nor_flash, 0, sizeof(fast), fast))
+		return;
+
+	spi->read->iftype = IF_TYPE_STD;
+	spi->read->cmd = SPI_CMD_READ_STD;
+	spi->read->dummy = 0;
+	spi->read->clock = FMC_CLK_SEL_24M;
+
+	if (!spi_nor_flash->read(spi_nor_flash, 0, sizeof(plain), plain)
+			&& memcmp(fast, plain, sizeof(plain))) {
+		printf("Read cmd 0x%02x returns other data than 0x%02x, "
+			"using single I/O\n", saved.cmd, SPI_CMD_READ_STD);
+		return;
+	}
+
+	*spi->read = saved;
+}
+
+/*****************************************************************************/
 struct spi_flash *hifmc100_spi_nor_probe(struct mtd_info_ex **spi_nor_info)
 {
 	static struct spi_flash *spi_nor_flash;
@@ -141,6 +180,7 @@ struct spi_flash *hifmc100_spi_nor_probe(struct mtd_info_ex **spi_nor_info)
 				hifmc100_get_spi_nor_info(spi_nor_flash);
 
 			hifmc100_probe_spi_size(spi_nor_flash);
+			hifmc100_check_read(spi_nor_flash);
 			printf("SPI Nor total size: %uMB\n",
 					spi_nor_flash->size >> 20);
 			FMC_PR(BT_DBG, "\t|-Add func hook for Reset cmd\n");
