@@ -33,7 +33,7 @@
 #include "hifmc100.h"
 
 /*****************************************************************************/
-static void hifmc100_dma_transfer(struct hifmc_spi *spi,
+static int hifmc100_dma_transfer(struct hifmc_spi *spi,
 	unsigned int spi_start_addr, unsigned char *dma_buffer,
 	unsigned char rw_op, unsigned int size)
 {
@@ -90,7 +90,9 @@ static void hifmc100_dma_transfer(struct hifmc_spi *spi,
 
 	FMC_PR(DMA_DB, "\t\t *-End dma transfer.\n");
 
-	return;
+	/* The wait above only logs a timeout; let a caller that compares the
+	 * data know the buffer was never filled. */
+	return (hifmc_read(host, FMC_INT) & FMC_INT_OP_DONE) ? 0 : -EIO;
 }
 
 /*****************************************************************************/
@@ -227,6 +229,7 @@ static int hifmc100_dma_read(struct spi_flash *spiflash, u_int from, size_t len,
 				void *buf)
 {
 	size_t num;
+	int ret = 0;
 	struct hifmc_host *host = SPIFLASH_TO_HOST(spiflash);
 	struct hifmc_spi *spi = host->spi;
 
@@ -287,8 +290,9 @@ static int hifmc100_dma_read(struct spi_flash *spiflash, u_int from, size_t len,
 		if (from + num > spi->chipsize)
 			num = spi->chipsize - from;
 
-		hifmc100_dma_transfer(spi, from, (u_char *)buf,
-				RW_OP_READ, num);
+		if (hifmc100_dma_transfer(spi, from, (u_char *)buf,
+				RW_OP_READ, num))
+			ret = -EIO;
 		from += num;
 		buf  += num;
 		len  -= num;
@@ -305,7 +309,7 @@ static int hifmc100_dma_read(struct spi_flash *spiflash, u_int from, size_t len,
 #endif
 	FMC_PR(RD_DBG, "\t|*-End dma read.\n");
 
-	return 0;
+	return ret;
 }
 
 /*****************************************************************************/

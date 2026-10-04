@@ -22,6 +22,7 @@
 #include <common.h>
 #include <spi_flash.h>
 #include <linux/mtd/mtd.h>
+#include <asm/errno.h>
 #include <hifmc_common.h>
 
 #include "../../hifmc_spi_ids.h"
@@ -121,18 +122,38 @@ static void hifmc100_probe_spi_size(struct spi_flash *spi_nor_flash)
  * MX25L6436F: every read returns zeros while writes and erases, which are
  * single-I/O, keep working, so bootm finds no kernel (OpenIPC/firmware#646).
  * The bootrom has just proved that a plain 0x03 read from the 24 MHz clock
- * works on this board -- it is how we got loaded -- so read the head of the
- * flash both ways and keep the plain read when the two disagree.  That proof
- * covers a 3-byte-addressed SDR read only, so 4-byte and DTR parts are left
- * alone.
+ * works on this board -- it is how we got loaded -- so read each chip both
+ * ways at a few offsets and keep the plain read when any of them disagree.
+ * Several offsets, because one sample that happens to be zero would let a
+ * read that returns only zeros through.  That proof covers a 3-byte-addressed
+ * SDR read only, so 4-byte and DTR parts are left alone.
  */
-#define HIFMC100_READ_CHECK_LEN	16
+#define HIFMC100_READ_CHECK_LEN		16
+#define HIFMC100_READ_CHECK_SAMPLES	4
 
-static void hifmc100_check_read(struct spi_flash *spi_nor_flash)
+static int hifmc100_read_samples(struct spi_flash *spi_nor_flash,
+		u_int base, u_int chipsize, u_char *buf)
 {
-	struct hifmc_spi *spi = hifmc100_host.spi;
+	int ix;
+
+	for (ix = 0; ix < HIFMC100_READ_CHECK_SAMPLES; ix++) {
+		u_int from = base + chipsize / HIFMC100_READ_CHECK_SAMPLES * ix;
+
+		if (spi_nor_flash->read(spi_nor_flash, from,
+				HIFMC100_READ_CHECK_LEN,
+				buf + HIFMC100_READ_CHECK_LEN * ix))
+			return -EIO;
+	}
+
+	return 0;
+}
+
+static void hifmc100_check_read_chip(struct spi_flash *spi_nor_flash,
+		struct hifmc_spi *spi, u_int base)
+{
 	struct spi_op saved = *spi->read;
-	u_char fast[HIFMC100_READ_CHECK_LEN], plain[HIFMC100_READ_CHECK_LEN];
+	u_char fast[HIFMC100_READ_CHECK_LEN * HIFMC100_READ_CHECK_SAMPLES];
+	u_char plain[HIFMC100_READ_CHECK_LEN * HIFMC100_READ_CHECK_SAMPLES];
 
 	if (spi->read->iftype == IF_TYPE_STD || spi->addrcycle != 3)
 		return;
@@ -141,7 +162,7 @@ static void hifmc100_check_read(struct spi_flash *spi_nor_flash)
 		return;
 #endif
 
-	if (spi_nor_flash->read(spi_nor_flash, 0, sizeof(fast), fast))
+	if (hifmc100_read_samples(spi_nor_flash, base, spi->chipsize, fast))
 		return;
 
 	spi->read->iftype = IF_TYPE_STD;
@@ -149,14 +170,27 @@ static void hifmc100_check_read(struct spi_flash *spi_nor_flash)
 	spi->read->dummy = 0;
 	spi->read->clock = FMC_CLK_SEL_24M;
 
-	if (!spi_nor_flash->read(spi_nor_flash, 0, sizeof(plain), plain)
+	if (!hifmc100_read_samples(spi_nor_flash, base, spi->chipsize, plain)
 			&& memcmp(fast, plain, sizeof(plain))) {
-		printf("Read cmd 0x%02x returns other data than 0x%02x, "
-			"using single I/O\n", saved.cmd, SPI_CMD_READ_STD);
+		printf("Read cmd 0x%02x returns other data than 0x%02x on "
+			"cs %d, using single I/O\n", saved.cmd,
+			SPI_CMD_READ_STD, spi->chipselect);
 		return;
 	}
 
 	*spi->read = saved;
+}
+
+static void hifmc100_check_read(struct spi_flash *spi_nor_flash)
+{
+	struct hifmc_host *host = &hifmc100_host;
+	struct hifmc_spi *spi = host->spi;
+	u_int ix, base = 0;
+
+	for (ix = 0; ix < host->spi_nor_info->numchips; ix++, spi++) {
+		hifmc100_check_read_chip(spi_nor_flash, spi, base);
+		base += spi->chipsize;
+	}
 }
 
 /*****************************************************************************/
