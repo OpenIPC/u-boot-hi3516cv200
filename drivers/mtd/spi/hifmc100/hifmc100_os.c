@@ -122,7 +122,9 @@ static void hifmc100_probe_spi_size(struct spi_flash *spi_nor_flash)
  * single-I/O, keep working, so bootm finds no kernel (OpenIPC/firmware#646).
  * The bootrom has just proved that a plain 0x03 read from the 24 MHz clock
  * works on this board -- it is how we got loaded -- so read the head of the
- * flash both ways and keep the plain read when the two disagree.
+ * flash both ways and keep the plain read when the two disagree.  That proof
+ * covers a 3-byte-addressed SDR read only, so 4-byte and DTR parts are left
+ * alone.
  */
 #define HIFMC100_READ_CHECK_LEN	16
 
@@ -132,8 +134,12 @@ static void hifmc100_check_read(struct spi_flash *spi_nor_flash)
 	struct spi_op saved = *spi->read;
 	u_char fast[HIFMC100_READ_CHECK_LEN], plain[HIFMC100_READ_CHECK_LEN];
 
-	if (spi->read->iftype == IF_TYPE_STD)
+	if (spi->read->iftype == IF_TYPE_STD || spi->addrcycle != 3)
 		return;
+#ifdef CONFIG_DTR_MODE_SUPPORT
+	if (spi->dtr_mode_support)
+		return;
+#endif
 
 	if (spi_nor_flash->read(spi_nor_flash, 0, sizeof(fast), fast))
 		return;
